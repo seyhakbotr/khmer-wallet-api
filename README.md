@@ -1,4 +1,10 @@
-# Wallet API — Multi-Currency Wallet (USD / KHR)
+# Khmer Wallet API — Multi-Currency Wallet (USD / KHR)
+
+[![CI](https://github.com/seyhakbotr/khmer-wallet-api/actions/workflows/ci.yml/badge.svg)](https://github.com/seyhakbotr/khmer-wallet-api/actions/workflows/ci.yml)
+[![Java 21](https://img.shields.io/badge/Java-21-orange?logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/21/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
 A small, boring-on-purpose backend that solves a real problem: **holding and moving money in two currencies without ever losing a cent**.
 
