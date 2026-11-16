@@ -6,7 +6,8 @@ services:
       POSTGRES_USER: wallet
       POSTGRES_PASSWORD: wallet
     ports:
-      - "5432:5432"
+      # 5432 is often taken by a local Postgres; keep this project isolated.
+      - "5434:5432"
     volumes:
       - wallet-db-data:/var/lib/postgresql/data
     healthcheck:

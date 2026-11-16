@@ -38,7 +38,7 @@ docker compose up --build
 # 1. Start only the database
 docker compose up -d db
 
-# 2. Run the app (uses localhost:5432 by default)
+# 2. Run the app (uses localhost:5434 by default, so it won't clash with a local Postgres)
 ./gradlew bootRun
 ```
 
@@ -141,7 +141,7 @@ src/test/java/com/wallet/api/
 
 | Env var | Default | Notes |
 |---|---|---|
-| `DB_URL` | `jdbc:postgresql://localhost:5432/wallet` | |
+| `DB_URL` | `jdbc:postgresql://localhost:5434/wallet` | host port 5434 avoids clashing with a local Postgres |
 | `DB_USER` / `DB_PASSWORD` | `wallet` / `wallet` | dev only |
 | `JWT_SECRET` | dev-only default | must be ≥ 32 bytes; **override in any real environment** |
 | `JWT_EXPIRATION_MINUTES` | `60` | |

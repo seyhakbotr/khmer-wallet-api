@@ -3,7 +3,7 @@ spring:
     name: wallet-api
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/wallet}
+    url: ${DB_URL:jdbc:postgresql://localhost:5434/wallet}
     username: ${DB_USER:wallet}
     password: ${DB_PASSWORD:wallet}
 
