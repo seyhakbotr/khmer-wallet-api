@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -69,5 +70,36 @@ public abstract class AbstractIntegrationTest {
 		String phone = uniquePhone();
 		register(phone, "Test User", "password123").andExpect(status().isCreated());
 		return loginAndGetToken(phone, "password123");
+	}
+
+	/** Creates an account through the API and returns its account number. */
+	protected String createAccount(String token, String currency) throws Exception {
+		MvcResult result = mockMvc.perform(post("/api/accounts")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"currency": "%s"}
+						""".formatted(currency)))
+			.andExpect(status().isCreated())
+			.andReturn();
+		return JsonPath.read(result.getResponse().getContentAsString(), "$.accountNumber");
+	}
+
+	protected ResultActions deposit(String token, String accountNumber, String amount) throws Exception {
+		return mockMvc.perform(post("/api/accounts/{accountNumber}/deposits", accountNumber)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"amount": "%s"}
+						""".formatted(amount)));
+	}
+
+	protected ResultActions withdraw(String token, String accountNumber, String amount) throws Exception {
+		return mockMvc.perform(post("/api/accounts/{accountNumber}/withdrawals", accountNumber)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"amount": "%s"}
+						""".formatted(amount)));
 	}
 }

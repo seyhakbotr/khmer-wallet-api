@@ -7,10 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.test.web.servlet.ResultActions;
 
-import com.jayway.jsonpath.JsonPath;
 import com.wallet.api.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -143,27 +140,6 @@ class DepositControllerIT extends AbstractIntegrationTest {
 			.andExpect(status().isUnauthorized());
 
 		assertThat(entryCount(accountNumber)).isZero();
-	}
-
-	private ResultActions deposit(String token, String accountNumber, String amount) throws Exception {
-		return mockMvc.perform(post("/api/accounts/{accountNumber}/deposits", accountNumber)
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{"amount": "%s"}
-						""".formatted(amount)));
-	}
-
-	private String createAccount(String token, String currency) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/accounts")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{"currency": "%s"}
-						""".formatted(currency)))
-			.andExpect(status().isCreated())
-			.andReturn();
-		return JsonPath.read(result.getResponse().getContentAsString(), "$.accountNumber");
 	}
 
 	private long entryCount(String accountNumber) {

@@ -54,6 +54,12 @@ public class GlobalExceptionHandler {
 				.body(ApiError.of(HttpStatus.CONFLICT, ex.getMessage(), request.getRequestURI()));
 	}
 
+	@ExceptionHandler(BusinessRuleException.class)
+	ResponseEntity<ApiError> handleBusinessRule(BusinessRuleException ex, HttpServletRequest request) {
+		return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+				.body(ApiError.of(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage(), request.getRequestURI()));
+	}
+
 	@ExceptionHandler(DataIntegrityViolationException.class)
 	ResponseEntity<ApiError> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
 		return ResponseEntity.status(HttpStatus.CONFLICT)

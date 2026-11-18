@@ -56,6 +56,14 @@ class MoneyTest {
 	}
 
 	@Test
+	void formatsMinorUnitsAsPlainDecimalStrings() {
+		assertThat(Money.format(1_050)).isEqualTo("10.50");
+		assertThat(Money.format(50)).isEqualTo("0.50");
+		assertThat(Money.format(0)).isEqualTo("0.00");
+		assertThat(Money.format(Money.of(1_025, Currency.USD))).isEqualTo("10.25");
+	}
+
+	@Test
 	void parsesDecimalStringsToMinorUnits() {
 		assertThat(Money.parse("10.50", Currency.USD)).isEqualTo(Money.of(1_050, Currency.USD));
 		assertThat(Money.parse("10.5", Currency.USD)).isEqualTo(Money.of(1_050, Currency.USD));

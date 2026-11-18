@@ -76,6 +76,14 @@ public record Money(long amountMinor, Currency currency) {
 		return new Money(result, currency);
 	}
 
+	public static String format(long amountMinor) {
+		return BigDecimal.valueOf(amountMinor, 2).toPlainString();
+	}
+
+	public static String format(Money money) {
+		return format(money.amountMinor());
+	}
+
 	private Money sameCurrency(Money other) {
 		Objects.requireNonNull(other, "other is required");
 		if (currency != other.currency) {
@@ -86,6 +94,6 @@ public record Money(long amountMinor, Currency currency) {
 
 	@Override
 	public String toString() {
-		return BigDecimal.valueOf(amountMinor, 2).toPlainString() + " " + currency;
+		return format(amountMinor) + " " + currency;
 	}
 }
