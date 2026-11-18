@@ -27,7 +27,9 @@ A small, boring-on-purpose backend that solves a real problem: **holding and mov
 - JWT-protected endpoints (stateless — no server sessions)
 - Create a USD or KHR account per user (one of each, max)
 - List your own accounts
-- One consistent JSON error shape for validation, 401, 404 and 409
+- Deposit and withdraw money with exact minor-unit arithmetic
+- Read a balance derived from the append-only ledger (`SUM(entries)`, never a stored counter)
+- One consistent JSON error shape for validation, 401, 404, 409 and 422
 
 ## Running it
 
@@ -64,16 +66,34 @@ curl -s -X POST http://localhost:8080/api/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"fullName":"Dara Sok","phone":"012345678","password":"password123"}'
 
-# Log in and copy the token
-curl -s -X POST http://localhost:8080/api/auth/login \
+# Log in and capture the token
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"phone":"012345678","password":"password123"}'
+  -d '{"phone":"012345678","password":"password123"}' \
+  | sed 's/.*"token":"\([^"]*\)".*/\1/')
 
-# Create a USD account
-curl -s -X POST http://localhost:8080/api/accounts \
+# Create a USD account and capture its account number
+ACC=$(curl -s -X POST http://localhost:8080/api/accounts \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"currency":"USD"}'
+  -d '{"currency":"USD"}' \
+  | sed 's/.*"accountNumber":"\([^"]*\)".*/\1/')
+
+# Deposit 10.50
+curl -s -X POST "http://localhost:8080/api/accounts/$ACC/deposits" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"amount":"10.50"}'
+
+# Withdraw 4.00
+curl -s -X POST "http://localhost:8080/api/accounts/$ACC/withdrawals" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"amount":"4.00"}'
+
+# Balance: 6.50
+curl -s "http://localhost:8080/api/accounts/$ACC/balance" \
+  -H "Authorization: Bearer $TOKEN"
 
 # List my accounts
 curl -s http://localhost:8080/api/accounts -H "Authorization: Bearer $TOKEN"
@@ -91,6 +111,12 @@ curl -s http://localhost:8080/api/me -H "Authorization: Bearer $TOKEN"
 | GET | `/api/me` | Bearer | Current user |
 | POST | `/api/accounts` | Bearer | Create USD/KHR account |
 | GET | `/api/accounts` | Bearer | List my accounts |
+| POST | `/api/accounts/{accountNumber}/deposits` | Bearer | Deposit money (`{"amount":"10.50"}`) |
+| POST | `/api/accounts/{accountNumber}/withdrawals` | Bearer | Withdraw money (`{"amount":"4.00"}`) |
+| GET | `/api/accounts/{accountNumber}/balance` | Bearer | Derived balance |
+
+Amounts are decimal strings with at most two decimal places. They are stored as integer
+minor units and returned as strings, so no floating-point value ever touches money.
 
 Errors always look like this:
 
@@ -108,13 +134,15 @@ Errors always look like this:
 ## Design decisions
 
 1. **Money is an integer, never a float.** `Money` stores minor units (`long`): USD in cents, KHR in sen. `0.1 + 0.2 != 0.3` in floating point; cents arithmetic is exact. `Money` refuses to mix currencies.
-2. **Accounts have no `balance` column.** Balance will be **derived** from an append-only double-entry ledger (next phase), so it can always be audited. A stored counter can silently drift; history cannot.
+2. **Balances are derived from the ledger, not stored.** `accounts` has no `balance` column. Every deposit and withdrawal appends one immutable `ledger_entries` row, and the balance is `SUM(amount_minor)` for that account. A stored counter can silently drift; history cannot.
 3. **Phone number is the username.** Matches how Wing/ABA-style wallets work in Cambodia where the phone number is the familiar login identifier.
 4. **Stateless JWT auth.** Each request carries a signed token; no server-side session store. BCrypt (with per-password salt) protects the password hashes.
 5. **One account per user per currency** — enforced by a DB unique constraint, not just application code. Two layers, because races happen.
 6. **Flyway migrations** are Java's version of Laravel migrations: every schema change is a numbered, committed SQL file (`db/migration/V1__init.sql`).
 7. **Consistent error contract.** A single `@RestControllerAdvice` translates exceptions into one predictable JSON shape; clients (and tests) can rely on it.
 8. **Integration tests hit a real database.** H2 would hide Postgres behavior (constraints, identity columns, locking). Testcontainers gives production parity.
+9. **Withdrawing more than the balance returns 422, not 400.** The request is well-formed and the account exists; the current state forbids the operation. No ledger row is written on an overdraft — the check happens before the insert.
+10. **Ledger rows use a signed amount plus an `EntryType` label.** The sign is the money fact (`+1050`, `-400`) and the type documents the movement (`DEPOSIT`, `WITHDRAWAL`). A database `CHECK` keeps the two from contradicting each other.
 
 ## Project layout
 
@@ -122,23 +150,27 @@ Errors always look like this:
 src/main/java/com/wallet/api/
 ├── auth/        register + login (DTOs, service, controller)
 ├── account/     create/list accounts
+├── ledger/      deposits, withdrawals, derived balance
 ├── security/    JWT service, filter, Spring Security config
 ├── user/        User entity + repository, /api/me
 └── common/      Currency, Money, shared error handling
 src/main/resources/
 ├── application.yml
-└── db/migration/V1__init.sql
+└── db/migration/
+    ├── V1__init.sql
+    └── V2__ledger_entries.sql
 src/test/java/com/wallet/api/
 ├── AbstractIntegrationTest.java   real Postgres + MockMvc base class
 ├── auth/AuthControllerIT.java
 ├── account/AccountControllerIT.java
+├── ledger/                       deposit, withdraw, balance + repository IT
 └── common/MoneyTest.java
 ```
 
 ## Roadmap
 
 - [x] **Phase 1** — users, JWT auth, accounts, validation, errors, tests
-- [ ] **Phase 2** — deposit / withdraw, `Money` used end-to-end, insufficient-funds rule
+- [x] **Phase 2** — deposit / withdraw, `Money` used end-to-end, derived balances, insufficient-funds rule
 - [ ] **Phase 3** — transfers, double-entry ledger, idempotency keys, pessimistic locking, audit log
 - [ ] **Phase 4** — daily transfer limits, end-of-day statements (`@Scheduled`), USD/KHR rate table
 - [ ] **Phase 5** — Swagger UI, full README + demo video
