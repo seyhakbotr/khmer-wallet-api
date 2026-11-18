@@ -2,6 +2,8 @@ package com.wallet.api.common;
 
 import org.junit.jupiter.api.Test;
 
+import com.wallet.api.common.error.InvalidAmountException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -51,5 +53,67 @@ class MoneyTest {
 	void formatsAmountsWithTwoDecimals() {
 		assertThat(Money.of(1_025, Currency.USD)).hasToString("10.25 USD");
 		assertThat(Money.of(50, Currency.KHR)).hasToString("0.50 KHR");
+	}
+
+	@Test
+	void parsesDecimalStringsToMinorUnits() {
+		assertThat(Money.parse("10.50", Currency.USD)).isEqualTo(Money.of(1_050, Currency.USD));
+		assertThat(Money.parse("10.5", Currency.USD)).isEqualTo(Money.of(1_050, Currency.USD));
+		assertThat(Money.parse("10", Currency.USD)).isEqualTo(Money.of(1_000, Currency.USD));
+		assertThat(Money.parse("0.01", Currency.KHR)).isEqualTo(Money.of(1, Currency.KHR));
+		assertThat(Money.parse(" 10.50 ", Currency.USD)).isEqualTo(Money.of(1_050, Currency.USD));
+	}
+
+	@Test
+	void acceptsThePerOperationMaximum() {
+		assertThat(Money.parse("1000000.00", Currency.USD)).isEqualTo(Money.of(100_000_000, Currency.USD));
+	}
+
+	@Test
+	void rejectsBlankAmounts() {
+		assertInvalidAmount(null);
+		assertInvalidAmount("");
+		assertInvalidAmount("   ");
+	}
+
+	@Test
+	void rejectsSignedAmounts() {
+		assertInvalidAmount("-5.00");
+		assertInvalidAmount("+5.00");
+	}
+
+	@Test
+	void rejectsMalformedAmounts() {
+		assertInvalidAmount("abc");
+		assertInvalidAmount("1e5");
+		assertInvalidAmount("10.");
+		assertInvalidAmount(".5");
+	}
+
+	@Test
+	void rejectsMoreThanTwoDecimalPlaces() {
+		assertInvalidAmount("10.555");
+		assertInvalidAmount("0.005");
+	}
+
+	@Test
+	void rejectsZeroAmounts() {
+		assertInvalidAmount("0");
+		assertInvalidAmount("0.00");
+	}
+
+	@Test
+	void rejectsAmountsThatOverflowALong() {
+		assertInvalidAmount("99999999999999999999.99");
+	}
+
+	@Test
+	void rejectsAmountsAboveThePerOperationMaximum() {
+		assertInvalidAmount("1000000.01");
+	}
+
+	private static void assertInvalidAmount(String amount) {
+		assertThatThrownBy(() -> Money.parse(amount, Currency.USD))
+			.isInstanceOf(InvalidAmountException.class);
 	}
 }

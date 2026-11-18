@@ -36,6 +36,12 @@ public class GlobalExceptionHandler {
 				.body(ApiError.validation("Malformed JSON request", request.getRequestURI(), Map.of()));
 	}
 
+	@ExceptionHandler(InvalidAmountException.class)
+	ResponseEntity<ApiError> handleInvalidAmount(InvalidAmountException ex, HttpServletRequest request) {
+		return ResponseEntity.badRequest()
+				.body(ApiError.validation("Invalid amount", request.getRequestURI(), Map.of("amount", ex.getMessage())));
+	}
+
 	@ExceptionHandler(NotFoundException.class)
 	ResponseEntity<ApiError> handleNotFound(NotFoundException ex, HttpServletRequest request) {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND)
