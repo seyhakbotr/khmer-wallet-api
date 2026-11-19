@@ -28,6 +28,10 @@ A small, boring-on-purpose backend that solves a real problem: **holding and mov
 - Create a USD or KHR account per user (one of each, max)
 - List your own accounts
 - Deposit and withdraw money with exact minor-unit arithmetic
+- Transfer money to another account in the same currency, with **double-entry** ledger rows (debit + credit = 0)
+- Safe retries with an `Idempotency-Key` header — the same key moves money once
+- Pessimistic row locks so two concurrent requests cannot overdraw the same account
+- An append-only audit log enforced by database triggers (no UPDATE, DELETE or TRUNCATE)
 - Read a balance derived from the append-only ledger (`SUM(entries)`, never a stored counter)
 - One consistent JSON error shape for validation, 401, 404, 409 and 422
 
@@ -95,6 +99,15 @@ curl -s -X POST "http://localhost:8080/api/accounts/$ACC/withdrawals" \
 curl -s "http://localhost:8080/api/accounts/$ACC/balance" \
   -H "Authorization: Bearer $TOKEN"
 
+# Transfer 2.00 to another account in the same currency.
+# Replace 9000000001 with a real destination account number.
+# Repeating the same Idempotency-Key returns the original result and moves money once.
+curl -s -X POST http://localhost:8080/api/transfers \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Idempotency-Key: demo-transfer-001' \
+  -d "{\"sourceAccountNumber\":\"$ACC\",\"destinationAccountNumber\":\"9000000001\",\"amount\":\"2.00\"}"
+
 # List my accounts
 curl -s http://localhost:8080/api/accounts -H "Authorization: Bearer $TOKEN"
 
@@ -114,6 +127,21 @@ curl -s http://localhost:8080/api/me -H "Authorization: Bearer $TOKEN"
 | POST | `/api/accounts/{accountNumber}/deposits` | Bearer | Deposit money (`{"amount":"10.50"}`) |
 | POST | `/api/accounts/{accountNumber}/withdrawals` | Bearer | Withdraw money (`{"amount":"4.00"}`) |
 | GET | `/api/accounts/{accountNumber}/balance` | Bearer | Derived balance |
+| POST | `/api/transfers` | Bearer + `Idempotency-Key` | Transfer between accounts in one currency |
+
+A transfer looks like this:
+
+```json
+{
+  "sourceAccountNumber": "9836015344",
+  "destinationAccountNumber": "9004821957",
+  "amount": "12.34"
+}
+```
+
+The `Idempotency-Key` header is required (1–100 letters, digits, `.`, `_`, `:` or `-`).
+Reusing a key with the same request returns the original response; reusing it with a
+different amount or account returns `409 Conflict`.
 
 Amounts are decimal strings with at most two decimal places. They are stored as integer
 minor units and returned as strings, so no floating-point value ever touches money.
@@ -142,7 +170,12 @@ Errors always look like this:
 7. **Consistent error contract.** A single `@RestControllerAdvice` translates exceptions into one predictable JSON shape; clients (and tests) can rely on it.
 8. **Integration tests hit a real database.** H2 would hide Postgres behavior (constraints, identity columns, locking). Testcontainers gives production parity.
 9. **Withdrawing more than the balance returns 422, not 400.** The request is well-formed and the account exists; the current state forbids the operation. No ledger row is written on an overdraft — the check happens before the insert.
-10. **Ledger rows use a signed amount plus an `EntryType` label.** The sign is the money fact (`+1050`, `-400`) and the type documents the movement (`DEPOSIT`, `WITHDRAWAL`). A database `CHECK` keeps the two from contradicting each other.
+10. **Ledger rows use a signed amount plus an `EntryType` label.** The sign is the money fact (`+1050`, `-400`) and the type documents the movement (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER_IN`, `TRANSFER_OUT`). A database `CHECK` keeps the two from contradicting each other.
+11. **Transfers are double-entry.** Each transfer writes exactly two `ledger_entries` rows — `TRANSFER_OUT` on the source (`-amount`) and `TRANSFER_IN` on the destination (`+amount`) — both linked to the same `transactions` row. Their sum is zero, so `SUM(amount_minor)` across the wallet is conserved. A `CHECK` requires transfer entries to have a transaction and deposit/withdrawal entries not to. Deposits and withdrawals are external cash flows (the counterparty is outside the wallet), so they stay single-sided.
+12. **Idempotency is a database fact, not a client courtesy.** `transactions` has a `UNIQUE (user_id, idempotency_key)` constraint. A repeated key returns the stored transaction instead of moving money again. `pg_advisory_xact_lock` serializes two in-flight requests with the same key, so the second sees the first result rather than racing the unique constraint. Reusing a key for a different amount or account is a `409 Conflict`.
+13. **Pessimistic locks, ordered by account id.** Every deposit, withdrawal and transfer runs `SELECT … FOR UPDATE` on its account rows before reading a balance. This is what stops two concurrent withdrawals from both reading the same balance and overdrawing. Transfers always lock the lower account id first, so A→B and B→A cannot deadlock.
+14. **The audit log is append-only at the database level.** The repository exposes only `save`, and Postgres triggers reject `UPDATE`, `DELETE` and `TRUNCATE` on `audit_log`. Audit rows are written in the same transaction as the money movement: if the audit insert fails, the money movement rolls back.
+15. **UTC everywhere.** Timestamps are stored as `TIMESTAMPTZ` and serialized as ISO-8601 UTC instants.
 
 ## Project layout
 
@@ -151,6 +184,8 @@ src/main/java/com/wallet/api/
 ├── auth/        register + login (DTOs, service, controller)
 ├── account/     create/list accounts
 ├── ledger/      deposits, withdrawals, derived balance
+├── transfer/    transfers, idempotency, double-entry transactions
+├── audit/       append-only who-did-what log
 ├── security/    JWT service, filter, Spring Security config
 ├── user/        User entity + repository, /api/me
 └── common/      Currency, Money, shared error handling
@@ -158,12 +193,15 @@ src/main/resources/
 ├── application.yml
 └── db/migration/
     ├── V1__init.sql
-    └── V2__ledger_entries.sql
+    ├── V2__ledger_entries.sql
+    └── V3__transfers_and_audit.sql
 src/test/java/com/wallet/api/
 ├── AbstractIntegrationTest.java   real Postgres + MockMvc base class
 ├── auth/AuthControllerIT.java
 ├── account/AccountControllerIT.java
 ├── ledger/                       deposit, withdraw, balance + repository IT
+├── transfer/                     transfer, idempotency and concurrency ITs
+├── audit/AuditLogIT.java
 └── common/MoneyTest.java
 ```
 
@@ -171,7 +209,7 @@ src/test/java/com/wallet/api/
 
 - [x] **Phase 1** — users, JWT auth, accounts, validation, errors, tests
 - [x] **Phase 2** — deposit / withdraw, `Money` used end-to-end, derived balances, insufficient-funds rule
-- [ ] **Phase 3** — transfers, double-entry ledger, idempotency keys, pessimistic locking, audit log
+- [x] **Phase 3** — transfers, double-entry ledger, idempotency keys, pessimistic locking, audit log
 - [ ] **Phase 4** — daily transfer limits, end-of-day statements (`@Scheduled`), USD/KHR rate table
 - [ ] **Phase 5** — Swagger UI, full README + demo video
 

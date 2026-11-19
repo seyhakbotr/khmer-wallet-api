@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -40,6 +41,19 @@ public class GlobalExceptionHandler {
 	ResponseEntity<ApiError> handleInvalidAmount(InvalidAmountException ex, HttpServletRequest request) {
 		return ResponseEntity.badRequest()
 				.body(ApiError.validation("Invalid amount", request.getRequestURI(), Map.of("amount", ex.getMessage())));
+	}
+
+	@ExceptionHandler(BadRequestException.class)
+	ResponseEntity<ApiError> handleBadRequest(BadRequestException ex, HttpServletRequest request) {
+		return ResponseEntity.badRequest()
+				.body(ApiError.of(HttpStatus.BAD_REQUEST, ex.getMessage(), request.getRequestURI()));
+	}
+
+	@ExceptionHandler(MissingRequestHeaderException.class)
+	ResponseEntity<ApiError> handleMissingHeader(MissingRequestHeaderException ex, HttpServletRequest request) {
+		return ResponseEntity.badRequest()
+				.body(ApiError.validation("Missing required header", request.getRequestURI(),
+						Map.of(ex.getHeaderName(), "is required")));
 	}
 
 	@ExceptionHandler(NotFoundException.class)

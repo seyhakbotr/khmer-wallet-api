@@ -102,4 +102,19 @@ public abstract class AbstractIntegrationTest {
 						{"amount": "%s"}
 						""".formatted(amount)));
 	}
+
+	protected ResultActions transfer(String token, String idempotencyKey, String sourceAccountNumber,
+			String destinationAccountNumber, String amount) throws Exception {
+		return mockMvc.perform(post("/api/transfers")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.header("Idempotency-Key", idempotencyKey)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(transferBody(sourceAccountNumber, destinationAccountNumber, amount)));
+	}
+
+	protected String transferBody(String sourceAccountNumber, String destinationAccountNumber, String amount) {
+		return """
+				{"sourceAccountNumber": "%s", "destinationAccountNumber": "%s", "amount": "%s"}
+				""".formatted(sourceAccountNumber, destinationAccountNumber, amount);
+	}
 }
