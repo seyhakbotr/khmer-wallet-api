@@ -8,8 +8,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/accounts")
+@Tag(name = "Statements", description = "Generated end-of-day statements")
 public class StatementController {
 
 	private final StatementService statementService;
@@ -19,6 +23,7 @@ public class StatementController {
 	}
 
 	@GetMapping("/{accountNumber}/statements")
+	@Operation(summary = "List my statements, newest first")
 	public List<StatementResponse> statements(Authentication authentication, @PathVariable String accountNumber) {
 		return statementService.listFor(authentication.getName(), accountNumber);
 	}

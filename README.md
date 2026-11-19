@@ -6,8 +6,9 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
-A small, boring-on-purpose backend that solves a real problem: **holding and moving money in two currencies without ever losing a cent**.
+A small, correctness-first backend that solves a real problem: **holding and moving money in two currencies without ever losing a cent**. Every movement is recorded in an append-only ledger, and balances are derived from it.
 
+**Try it in the browser:** start the app and open <http://localhost:8080/swagger-ui.html>.
 
 ## Stack
 
@@ -19,6 +20,7 @@ A small, boring-on-purpose backend that solves a real problem: **holding and mov
 | Auth | JWT bearer tokens, BCrypt password hashing |
 | Build | Gradle (wrapper included) |
 | Tests | JUnit 5 + MockMvc + Testcontainers (real Postgres in Docker) |
+| API docs | springdoc-openapi + Swagger UI (OpenAPI 3) |
 | Runtime | Docker / Docker Compose |
 
 ## What works today
@@ -36,6 +38,7 @@ A small, boring-on-purpose backend that solves a real problem: **holding and mov
 - Nightly `@Scheduled` statements with opening/closing balances and per-type totals
 - An admin-set USD/KHR rate table with dated history; users can only read the current rate
 - Read a balance derived from the append-only ledger (`SUM(entries)`, never a stored counter)
+- Interactive Swagger UI with a bearer-token **Authorize** button
 - One consistent JSON error shape for validation, 401, 404, 409 and 422
 
 ## Running it
@@ -64,6 +67,30 @@ docker compose up -d db
 ```
 
 Tests need Docker: Testcontainers starts a throwaway Postgres 16 container, applies the Flyway migrations, and runs real HTTP-level tests through the security filter chain.
+
+### API docs
+
+Start the app, then open:
+
+- **Swagger UI:** <http://localhost:8080/swagger-ui.html>
+- **Raw OpenAPI:** <http://localhost:8080/v3/api-docs>
+
+Both are public. Click **Authorize** and paste the JWT returned by `/api/auth/login` to try
+protected endpoints. The public register/login operations are marked as requiring no token.
+
+## Testing
+
+`./gradlew test` runs the whole suite against a real Postgres started by Testcontainers.
+
+- **Unit tests** cover the pure rules: `Money` parsing/arithmetic/currency safety, ledger
+  entry signs, transfer validation, and limit configuration.
+- **Integration tests** drive the real HTTP + security + Flyway + Postgres stack: auth and
+  validation, accounts, deposits/withdrawals, transfers, idempotency, concurrency, daily
+  limits, statements, rates/roles, and the OpenAPI endpoints.
+- The two concurrency tests use two threads and assert that exactly one full-balance
+  request succeeds, which is the evidence that the pessimistic lock works.
+
+Current suite: **112 tests, 0 failures, 0 skipped**.
 
 ## Try it
 
@@ -211,7 +238,7 @@ Errors always look like this:
 
 1. **Money is an integer, never a float.** `Money` stores minor units (`long`): USD in cents, KHR in sen. `0.1 + 0.2 != 0.3` in floating point; cents arithmetic is exact. `Money` refuses to mix currencies.
 2. **Balances are derived from the ledger, not stored.** `accounts` has no `balance` column. Every deposit and withdrawal appends one immutable `ledger_entries` row, and the balance is `SUM(amount_minor)` for that account. A stored counter can silently drift; history cannot.
-3. **Phone number is the username.** Matches how Wing/ABA-style wallets work in Cambodia where the phone number is the familiar login identifier.
+3. **Phone number is the username.** Matches how Wing/ABA-style wallets work in Cambodia, where the phone number is the familiar login identifier.
 4. **Stateless JWT auth.** Each request carries a signed token; no server-side session store. BCrypt (with per-password salt) protects the password hashes.
 5. **One account per user per currency** — enforced by a DB unique constraint, not just application code. Two layers, because races happen.
 6. **Flyway migrations** are Java's version of Laravel migrations: every schema change is a numbered, committed SQL file (`db/migration/V1__init.sql`).
@@ -228,6 +255,8 @@ Errors always look like this:
 17. **Statements are derived snapshots, not new truth.** Opening balance is the ledger sum before the day, closing is opening plus that day's signed entries. `UNIQUE (account_id, statement_date)` makes the nightly job idempotent; the job skips accounts created after the day and statements that already exist.
 18. **Exchange rates are integers with dates.** The rate is stored as KHR sen per 1 USD (`410000` = 4,100.00 KHR), so rate maths never touches floating point. The current rate is the newest row with `effective_from <= today`; future rates do not apply early.
 19. **Admin is a role, not a separate login system.** `users.role` is `USER` or `ADMIN`, authorities are loaded on every request, and `/api/admin/**` requires `ROLE_ADMIN`. A custom access-denied handler keeps `403` responses in the same JSON shape as the other errors.
+20. **API docs are generated from the running code.** springdoc reads the controllers and DTOs, so Swagger cannot drift from the implementation. The docs are public (they expose no data), the bearer scheme is declared once, and the API itself still requires a JWT.
+21. **Unit tests guard the money rules; integration tests guard the wiring.** Fast tests prove `Money`/sign/limit logic without Docker. Testcontainers tests prove the real security chain, Flyway schema, SQL constraints and row locks. Neither replaces the other.
 
 ## Project layout
 
@@ -240,16 +269,13 @@ src/main/java/com/wallet/api/
 ├── statement/   nightly end-of-day statements
 ├── rate/        admin-set USD/KHR rate
 ├── audit/       append-only who-did-what log
+├── config/      OpenAPI/Swagger metadata
 ├── security/    JWT service, filter, roles, Spring Security config
 ├── user/        User entity + repository, /api/me
 └── common/      Currency, Money, shared error handling
 src/main/resources/
 ├── application.yml
-└── db/migration/
-    ├── V1__init.sql
-    ├── V2__ledger_entries.sql
-    ├── V3__transfers_and_audit.sql
-    └── V4__phase4_rules_and_rates.sql
+└── db/migration/     V1–V4 Flyway schema migrations
 src/test/java/com/wallet/api/
 ├── AbstractIntegrationTest.java   real Postgres + MockMvc base class
 ├── auth/AuthControllerIT.java
@@ -259,16 +285,9 @@ src/test/java/com/wallet/api/
 ├── statement/                    statement service, job and controller ITs
 ├── rate/ExchangeRateIT.java      admin publish + user read rules
 ├── audit/AuditLogIT.java
-└── common/MoneyTest.java
+├── config/OpenApiDocsIT.java     public spec + Swagger UI
+├── common/MoneyTest.java
 ```
-
-## Roadmap
-
-- [x] **Phase 1** — users, JWT auth, accounts, validation, errors, tests
-- [x] **Phase 2** — deposit / withdraw, `Money` used end-to-end, derived balances, insufficient-funds rule
-- [x] **Phase 3** — transfers, double-entry ledger, idempotency keys, pessimistic locking, audit log
-- [x] **Phase 4** — daily transfer limits, end-of-day statements (`@Scheduled`), USD/KHR rate table
-- [ ] **Phase 5** — Swagger UI, full README + demo video
 
 ## Configuration
 

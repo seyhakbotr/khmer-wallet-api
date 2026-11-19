@@ -21,8 +21,8 @@ import jakarta.persistence.UniqueConstraint;
 /**
  * A wallet account owned by a user, in exactly one currency.
  *
- * <p>Note: there is intentionally no mutable {@code balance} column. Balances will be
- * derived from the ledger in a later phase, so a balance can never drift from history.</p>
+ * <p>Note: there is intentionally no mutable {@code balance} column. Balances are
+ * derived from the ledger, so a balance can never drift from history.</p>
  */
 @Entity
 @Table(name = "accounts",

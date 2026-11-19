@@ -9,10 +9,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.wallet.api.user.UserResponse;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/auth")
+@Tag(name = "Auth", description = "Register and log in")
 public class AuthController {
 
 	private final AuthService authService;
@@ -23,11 +27,15 @@ public class AuthController {
 
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
+	@Operation(summary = "Register a user")
+	@SecurityRequirements
 	public UserResponse register(@Valid @RequestBody RegisterRequest request) {
 		return authService.register(request);
 	}
 
 	@PostMapping("/login")
+	@Operation(summary = "Log in and receive a JWT")
+	@SecurityRequirements
 	public AuthResponse login(@Valid @RequestBody LoginRequest request) {
 		return authService.login(request);
 	}

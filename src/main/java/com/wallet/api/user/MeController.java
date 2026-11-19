@@ -7,8 +7,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.wallet.api.common.error.NotFoundException;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/me")
+@Tag(name = "Users", description = "Current user")
 public class MeController {
 
 	private final UserRepository users;
@@ -18,6 +22,7 @@ public class MeController {
 	}
 
 	@GetMapping
+	@Operation(summary = "Get the authenticated user")
 	public UserResponse me(Authentication authentication) {
 		return users.findByPhone(authentication.getName())
 				.map(UserResponse::from)
