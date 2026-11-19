@@ -24,6 +24,14 @@ app:
     # HS256 requires at least 32 bytes. Always override this outside local development.
     secret: ${JWT_SECRET:dev-only-secret-please-change-in-production-0123456789}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
+  zone: ${APP_ZONE:Asia/Phnom_Penh}
+  transfers:
+    # Minor units per currency: USD cents, KHR sen.
+    daily-limits:
+      USD: ${TRANSFER_DAILY_LIMIT_USD_MINOR:100000}
+      KHR: ${TRANSFER_DAILY_LIMIT_KHR_MINOR:400000000}
+  statements:
+    cron: "${STATEMENT_CRON:0 5 0 * * *}"
 
 server:
   port: ${SERVER_PORT:8080}

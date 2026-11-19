@@ -40,7 +40,7 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(InvalidAmountException.class)
 	ResponseEntity<ApiError> handleInvalidAmount(InvalidAmountException ex, HttpServletRequest request) {
 		return ResponseEntity.badRequest()
-				.body(ApiError.validation("Invalid amount", request.getRequestURI(), Map.of("amount", ex.getMessage())));
+				.body(ApiError.validation("Invalid amount", request.getRequestURI(), Map.of(ex.getField(), ex.getMessage())));
 	}
 
 	@ExceptionHandler(BadRequestException.class)

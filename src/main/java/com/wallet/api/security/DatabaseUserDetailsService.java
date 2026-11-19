@@ -26,7 +26,7 @@ public class DatabaseUserDetailsService implements UserDetailsService {
 				.orElseThrow(() -> new UsernameNotFoundException("No user with phone " + phone));
 		return org.springframework.security.core.userdetails.User.withUsername(user.getPhone())
 				.password(user.getPasswordHash())
-				.roles("USER")
+				.roles(user.getRole().name())
 				.build();
 	}
 }

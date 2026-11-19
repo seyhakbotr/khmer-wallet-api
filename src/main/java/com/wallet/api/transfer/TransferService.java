@@ -1,5 +1,8 @@
 package com.wallet.api.transfer;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -15,6 +18,7 @@ import com.wallet.api.common.error.BadRequestException;
 import com.wallet.api.common.error.BusinessRuleException;
 import com.wallet.api.common.error.ConflictException;
 import com.wallet.api.common.error.NotFoundException;
+import com.wallet.api.ledger.EntryType;
 import com.wallet.api.ledger.LedgerEntry;
 import com.wallet.api.ledger.LedgerEntryRepository;
 import com.wallet.api.user.User;
@@ -37,16 +41,22 @@ public class TransferService {
 
 	private final AuditLogService auditLog;
 
+	private final TransferLimitProperties limits;
+
+	private final Clock clock;
+
 	private final EntityManager entityManager;
 
 	public TransferService(AccountRepository accounts, LedgerEntryRepository ledger,
 			WalletTransactionRepository transactions, UserRepository users, AuditLogService auditLog,
-			EntityManager entityManager) {
+			TransferLimitProperties limits, Clock clock, EntityManager entityManager) {
 		this.accounts = accounts;
 		this.ledger = ledger;
 		this.transactions = transactions;
 		this.users = users;
 		this.auditLog = auditLog;
+		this.limits = limits;
+		this.clock = clock;
 		this.entityManager = entityManager;
 	}
 
@@ -79,6 +89,15 @@ public class TransferService {
 			throw new BusinessRuleException("Cross-currency transfers are not supported");
 		}
 		Money amount = Money.parse(request.amount(), source.getCurrency());
+
+		LocalDate today = LocalDate.now(clock);
+		Instant dayStart = today.atStartOfDay(clock.getZone()).toInstant();
+		Instant dayEnd = today.plusDays(1).atStartOfDay(clock.getZone()).toInstant();
+		long transferredToday = -ledger.sumAmountMinorByEntryTypeBetween(source.getId(), EntryType.TRANSFER_OUT,
+				dayStart, dayEnd);
+		if (transferredToday + amount.amountMinor() > limits.dailyLimitMinor(source.getCurrency())) {
+			throw new BusinessRuleException("Daily transfer limit exceeded");
+		}
 
 		long sourceBalance = ledger.sumAmountMinorByAccountId(source.getId());
 		long destinationBalance = ledger.sumAmountMinorByAccountId(destination.getId());

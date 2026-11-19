@@ -4,6 +4,8 @@ import java.time.Instant;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -27,6 +29,10 @@ public class User {
 	@Column(name = "password_hash", nullable = false, length = 100)
 	private String passwordHash;
 
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private Role role;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -38,6 +44,7 @@ public class User {
 		this.fullName = fullName;
 		this.phone = phone;
 		this.passwordHash = passwordHash;
+		this.role = Role.USER;
 		this.createdAt = Instant.now();
 	}
 
@@ -55,6 +62,10 @@ public class User {
 
 	public String getPasswordHash() {
 		return passwordHash;
+	}
+
+	public Role getRole() {
+		return role;
 	}
 
 	public Instant getCreatedAt() {
