@@ -234,30 +234,6 @@ Errors always look like this:
 }
 ```
 
-## Design decisions
-
-1. **Money is an integer, never a float.** `Money` stores minor units (`long`): USD in cents, KHR in sen. `0.1 + 0.2 != 0.3` in floating point; cents arithmetic is exact. `Money` refuses to mix currencies.
-2. **Balances are derived from the ledger, not stored.** `accounts` has no `balance` column. Every deposit and withdrawal appends one immutable `ledger_entries` row, and the balance is `SUM(amount_minor)` for that account. A stored counter can silently drift; history cannot.
-3. **Phone number is the username.** Matches how Wing/ABA-style wallets work in Cambodia, where the phone number is the familiar login identifier.
-4. **Stateless JWT auth.** Each request carries a signed token; no server-side session store. BCrypt (with per-password salt) protects the password hashes.
-5. **One account per user per currency** — enforced by a DB unique constraint, not just application code. Two layers, because races happen.
-6. **Flyway migrations** are Java's version of Laravel migrations: every schema change is a numbered, committed SQL file (`db/migration/V1__init.sql`).
-7. **Consistent error contract.** A single `@RestControllerAdvice` translates exceptions into one predictable JSON shape; clients (and tests) can rely on it.
-8. **Integration tests hit a real database.** H2 would hide Postgres behavior (constraints, identity columns, locking). Testcontainers gives production parity.
-9. **Withdrawing more than the balance returns 422, not 400.** The request is well-formed and the account exists; the current state forbids the operation. No ledger row is written on an overdraft — the check happens before the insert.
-10. **Ledger rows use a signed amount plus an `EntryType` label.** The sign is the money fact (`+1050`, `-400`) and the type documents the movement (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER_IN`, `TRANSFER_OUT`). A database `CHECK` keeps the two from contradicting each other.
-11. **Transfers are double-entry.** Each transfer writes exactly two `ledger_entries` rows — `TRANSFER_OUT` on the source (`-amount`) and `TRANSFER_IN` on the destination (`+amount`) — both linked to the same `transactions` row. Their sum is zero, so `SUM(amount_minor)` across the wallet is conserved. A `CHECK` requires transfer entries to have a transaction and deposit/withdrawal entries not to. Deposits and withdrawals are external cash flows (the counterparty is outside the wallet), so they stay single-sided.
-12. **Idempotency is a database fact, not a client courtesy.** `transactions` has a `UNIQUE (user_id, idempotency_key)` constraint. A repeated key returns the stored transaction instead of moving money again. `pg_advisory_xact_lock` serializes two in-flight requests with the same key, so the second sees the first result rather than racing the unique constraint. Reusing a key for a different amount or account is a `409 Conflict`.
-13. **Pessimistic locks, ordered by account id.** Every deposit, withdrawal and transfer runs `SELECT … FOR UPDATE` on its account rows before reading a balance. This is what stops two concurrent withdrawals from both reading the same balance and overdrawing. Transfers always lock the lower account id first, so A→B and B→A cannot deadlock.
-14. **The audit log is append-only at the database level.** The repository exposes only `save`, and Postgres triggers reject `UPDATE`, `DELETE` and `TRUNCATE` on `audit_log`. Audit rows are written in the same transaction as the money movement: if the audit insert fails, the money movement rolls back.
-15. **UTC everywhere.** Timestamps are stored as `TIMESTAMPTZ` and serialized as ISO-8601 UTC instants.
-16. **Daily limits are enforced inside the account lock.** The limit check sums today's `TRANSFER_OUT` rows for the source account after acquiring its `FOR UPDATE` lock. Two concurrent transfers therefore see each other's committed effect; neither can slip past the cap. "Today" is the business day in `Asia/Phnom_Penh`, not the server's default zone.
-17. **Statements are derived snapshots, not new truth.** Opening balance is the ledger sum before the day, closing is opening plus that day's signed entries. `UNIQUE (account_id, statement_date)` makes the nightly job idempotent; the job skips accounts created after the day and statements that already exist.
-18. **Exchange rates are integers with dates.** The rate is stored as KHR sen per 1 USD (`410000` = 4,100.00 KHR), so rate maths never touches floating point. The current rate is the newest row with `effective_from <= today`; future rates do not apply early.
-19. **Admin is a role, not a separate login system.** `users.role` is `USER` or `ADMIN`, authorities are loaded on every request, and `/api/admin/**` requires `ROLE_ADMIN`. A custom access-denied handler keeps `403` responses in the same JSON shape as the other errors.
-20. **API docs are generated from the running code.** springdoc reads the controllers and DTOs, so Swagger cannot drift from the implementation. The docs are public (they expose no data), the bearer scheme is declared once, and the API itself still requires a JWT.
-21. **Unit tests guard the money rules; integration tests guard the wiring.** Fast tests prove `Money`/sign/limit logic without Docker. Testcontainers tests prove the real security chain, Flyway schema, SQL constraints and row locks. Neither replaces the other.
-
 ## Project layout
 
 ```
